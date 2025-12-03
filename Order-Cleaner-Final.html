@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Order Details Cleaner — Multi‑Order</title>
+  <style>
+    :root{ --panel:#fff; --ink:#111827; --muted:#6B7280; --border:#E5E7EB }
+    html,body{height:100%}
+    body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Inter,sans-serif;background:#f7f8fb;color:var(--ink)}
+    .wrap{max-width:900px;margin:40px auto;padding:0 16px}
+    h1{font-size:20px;margin:0 0 8px}
+    .sub{color:var(--muted);font-size:13px;margin-bottom:16px}
+    .grid{display:grid;gap:16px}
+    @media(min-width:900px){.grid{grid-template-columns:1fr 1fr}}
+    .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:0 6px 24px rgba(17,24,39,.06)}
+    .card h2{margin:0;padding:12px 14px;font-size:13px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--border);color:#374151}
+    textarea{width:100%;min-height:340px;border:none;outline:none;resize:vertical;padding:14px;border-radius:0 0 14px 14px;font-size:14px;line-height:1.5}
+    .out{white-space:pre-wrap;min-height:340px;padding:14px;border-radius:0 0 14px 14px;font-size:14px;line-height:1.6;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+    .toolbar{display:flex;gap:8px;align-items:center;padding:10px 14px;border-top:1px solid var(--border)}
+    .btn{appearance:none;border:1px solid #111827;background:#111827;color:#fff;padding:10px 14px;border-radius:10px;font-weight:600;font-size:14px;cursor:pointer}
+    .btn.ghost{background:#fff;color:#111827}
+    .row{display:flex;gap:10px;align-items:center}
+    label{font-size:12px;color:#374151}
+    .muted{color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Order Details Cleaner — Multi‑Order</h1>
+    <div class="sub">Paste multiple orders separated by blank lines. The tool will clean and simplify each order, one per block.</div>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Input</h2>
+        <textarea id="input" placeholder="Paste multiple orders separated by blank lines...\n\nLeather Color: Navy (Blue)\nLeather Embossing: C\nPersonalization: W. W. J. D. H. W. L. F.\n\nLeather Color: Olive (Green)\nLeather Embossing: D\nPersonalization: W. W. J. D. H. W. L. F."></textarea>
+        <div class="toolbar">
+          <button class="btn" id="convert">Convert</button>
+          <button class="btn ghost" id="clear">Clear</button>
+          <div class="row"><input type="checkbox" id="live" checked><label for="live">Live update</label></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Output</h2>
+        <div id="output" class="out"></div>
+        <div class="toolbar">
+          <button class="btn" id="copy">Copy</button>
+          <span class="muted" id="copied" style="display:none">Copied ✓</span>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const $ = s => document.querySelector(s);
+
+    function normalize(val){
+      if(!val) return '';
+      let s = val.trim();
+      s = s.replace(/[“”]/g,'"').replace(/[‘’]/g,"'");
+      return s.replace(/\s{2,}/g,' ').trim();
+    }
+
+    function parseSingleOrder(text){
+      const bag = { leatherColor:'', claspColor:'', emboss:'', front:'', personalization:'' };
+      const lines = text.split(/\r?\n/);
+
+      for(let raw of lines){
+        let line = raw.trim();
+        if(!line) continue;
+
+        // Handle combined leather/clasp line
+        if(/^\s*(leather\s*color\s*\/\s*clasp\s*color)\s*:/i.test(line)){
+          const after = line.split(':').slice(1).join(':');
+          const parts = after.split('/').map(s=>s.trim()).filter(Boolean);
+          if(parts[0]) bag.leatherColor = parts[0];
+          if(parts[1]) bag.claspColor = parts[1];
+          continue;
+        }
+
+        if(line.includes(':')){
+          const label = line.split(':')[0].toLowerCase();
+          const value = line.split(':').slice(1).join(':').trim();
+
+          if(/leather\s*color/.test(label)) bag.leatherColor = value;
+          else if(/clasp\s*color|hardware|clasp/.test(label)) bag.claspColor = value;
+          else if(/emboss/.test(label)) bag.emboss = value;
+          else if(/front\s*(engraving|text|message)/.test(label)) bag.front = value;
+          else if(/personalization|coordinates?|gps/.test(label)) bag.personalization = value;
+        }
+      }
+      return bag;
+    }
+
+    function buildOutput(bag){
+      const parts = [];
+      if(bag.leatherColor) parts.push(normalize(bag.leatherColor));
+      if(bag.claspColor) parts.push(normalize(bag.claspColor));
+      if(bag.emboss) parts.push(normalize(bag.emboss));
+      const line1 = parts.join(' / ');
+      const second = bag.personalization ? bag.personalization : bag.front;
+      const line2 = normalize(second);
+      return [line1, line2].filter(Boolean).join('\n');
+    }
+
+    function convertAll(){
+      const input = $('#input').value.trim();
+      if(!input){ $('#output').textContent=''; return; }
+      const blocks = input.split(/\n{2,}/).map(b=>b.trim()).filter(Boolean);
+      const results = blocks.map(b=>buildOutput(parseSingleOrder(b))).join('\n\n');
+      $('#output').textContent = results;
+    }
+
+    $('#convert').addEventListener('click', convertAll);
+    $('#clear').addEventListener('click', ()=>{ $('#input').value=''; convertAll(); });
+    $('#copy').addEventListener('click', async ()=>{
+      try{ await navigator.clipboard.writeText($('#output').textContent); $('#copied').style.display='inline'; setTimeout(()=>$('#copied').style.display='none',1200);}catch(e){ alert('Copy failed'); }
+    });
+    $('#live').addEventListener('change', ()=>{ if($('#live').checked) convertAll(); });
+    $('#input').addEventListener('input', ()=>{ if($('#live').checked) convertAll(); });
+
+    // Start with empty fields
+    $('#input').value = '';
+    convertAll();
+  </script>
+</body>
+</html>
